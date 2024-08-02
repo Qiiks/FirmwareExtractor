@@ -6,7 +6,7 @@ import telebot
 import shutil
 
 # Configuration
-DOWNLOAD_URL = 'https://dl.google.com/dl/android/aosp/husky-ud1a.230803.022.a3-factory-a95417f6.zip'
+DOWNLOAD_URL = 'https://dl.google.com/dl/android/aosp/oriole-ota-ap2a.240705.004-0fe0567d.zip'
 TELEGRAM_TOKEN = '7458211623:AAEl7Msf2vLE627BhvUOFZ6qavkwHWQ1G2U'
 CHANNEL_ID = '-1002247204227'
 
@@ -22,6 +22,7 @@ os.makedirs(PAYLOAD_DIR, exist_ok=True)
 
 def download_file(url, dest):
     response = requests.get(url, stream=True)
+    print("downloading....")
     with open(dest, 'wb') as f:
         for chunk in response.iter_content(chunk_size=8192):
             if chunk:
@@ -36,13 +37,13 @@ def extract_zip(zip_path, extract_to):
 def extract_specific_files(payload_path, extract_to, files_to_extract):
     # Assuming you have payload_dumper installed and in PATH
     for file_name in files_to_extract:
-        subprocess.run(['payload-dumper-go', '-p', file_name, '-o', extract_to, payload_path], check=True)
+        subprocess.run(['payload-dumper-go.exe', '-p', file_name, '-o', extract_to, payload_path], check=True)
     print(f"Extracted specific files from payload.bin to {extract_to}")
 
 def send_files_via_telegram(bot, channel_id, file_paths):
     for file_path in file_paths:
         with open(file_path, 'rb') as file:
-            bot.send_document(chat_id=channel_id, document=file)
+            bot.send_document(channel_id, file)
             print(f"Sent {file_path} to Telegram channel {channel_id}")
 
 def cleanup(directories):
@@ -57,17 +58,18 @@ def main():
 
     # Download firmware file
     firmware_zip_path = os.path.join(DOWNLOAD_DIR, 'firmware.zip')
-    download_file(DOWNLOAD_URL, firmware_zip_path)
+    #download_file(DOWNLOAD_URL, firmware_zip_path)
 
     # Extract firmware file
-    extract_zip(firmware_zip_path, EXTRACT_DIR)
+    #extract_zip(firmware_zip_path, EXTRACT_DIR)
 
     # Extract specific files from payload.bin
     payload_path = os.path.join(EXTRACT_DIR, 'payload.bin')
-    required_files = ['boot.img', 'init_boot.img', 'vendor_boot.img', 'dtbo.img']
+    required_files = ['boot', 'init_boot', 'vendor_boot', 'dtbo']
     extract_specific_files(payload_path, PAYLOAD_DIR, required_files)
 
     # Collect required files
+    required_files = ['boot.img', 'vendor_boot.img', 'dtbo.img']
     file_paths = [os.path.join(PAYLOAD_DIR, file) for file in required_files]
 
     # Send files to Telegram channel
