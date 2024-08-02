@@ -156,6 +156,7 @@ def handle_download(message):
         bot.reply_to(message, f"An error occurred: {e}")
 
 def main():
+    logger.info("Bot started")
     bot.polling()
 
 while True:
@@ -163,3 +164,5 @@ while True:
         main()
     except Exception as e:
         logger.info("error occured: ", e)
+        time.sleep(5)  # Wait 5 seconds before retrying
+        
