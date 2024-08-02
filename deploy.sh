@@ -19,4 +19,7 @@ sleep 3
 echo "Fetching latest changes and updating..."
 git pull origin main
 
+echo "Starting updated script..."
+nohup python3 "NextBot V2.py" > /dev/null 2>&1 &
+
 echo "Deployment complete and script started"
