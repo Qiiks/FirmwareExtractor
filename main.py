@@ -165,4 +165,3 @@ while True:
     except Exception as e:
         logger.info("error occured: ", e)
         time.sleep(5)  # Wait 5 seconds before retrying
-        
