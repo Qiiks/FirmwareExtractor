@@ -1,82 +1,96 @@
 import os
 import requests
-import zipfile
-import subprocess
 import telebot
-import shutil
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configuration
-DOWNLOAD_URL = 'https://dl.google.com/dl/android/aosp/oriole-ota-ap2a.240705.004-0fe0567d.zip'
-TELEGRAM_TOKEN = '7458211623:AAEl7Msf2vLE627BhvUOFZ6qavkwHWQ1G2U'
-CHANNEL_ID = '-1002247204227'
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_API_TOKEN')
+GITHUB_REPO = 'Qiiks/FirmwareExtractor'  # Replace with your GitHub username and repository
+GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
 
-# Directory paths
-DOWNLOAD_DIR = 'downloaded_files'
-EXTRACT_DIR = 'extracted_files'
-PAYLOAD_DIR = 'payload_files'
+# Initialize Telegram bot
+bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# Ensure directories exist
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-os.makedirs(EXTRACT_DIR, exist_ok=True)
-os.makedirs(PAYLOAD_DIR, exist_ok=True)
+def trigger_github_workflow(repo, token, firmware_url):
+    workflow_url = f'https://api.github.com/repos/{repo}/actions/workflows/extract_payload.yml/dispatches'
+    headers = {
+        'Authorization': f'token {token}',
+        'Accept': 'application/vnd.github.v3+json',
+    }
+    data = {
+        'ref': 'main',  # or the branch you want to run the workflow on
+        'inputs': {
+            'firmware_url': firmware_url
+        }
+    }
+    response = requests.post(workflow_url, headers=headers, json=data)
+    response.raise_for_status()
+    print(f'Triggered workflow for {firmware_url}')
 
-def download_file(url, dest):
-    response = requests.get(url, stream=True)
-    print("downloading....")
-    with open(dest, 'wb') as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            if chunk:
+def download_artifacts(repo, run_id, token):
+    headers = {
+        'Authorization': f'token {token}',
+        'Accept': 'application/vnd.github.v3+json',
+    }
+    artifacts_url = f'https://api.github.com/repos/{repo}/actions/runs/{run_id}/artifacts'
+    response = requests.get(artifacts_url, headers=headers)
+    response.raise_for_status()
+
+    artifacts = response.json()['artifacts']
+    for artifact in artifacts:
+        download_url = artifact['archive_download_url']
+        artifact_name = artifact['name']
+        download_response = requests.get(download_url, headers=headers, stream=True)
+        download_response.raise_for_status()
+        
+        with open(f'{artifact_name}.zip', 'wb') as f:
+            for chunk in download_response.iter_content(chunk_size=8192):
                 f.write(chunk)
-    print(f"Downloaded {dest}")
+        print(f'Downloaded {artifact_name}.zip')
 
-def extract_zip(zip_path, extract_to):
-    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-        zip_ref.extractall(extract_to)
-    print(f"Extracted {zip_path} to {extract_to}")
-
-def extract_specific_files(payload_path, extract_to, files_to_extract):
-    # Assuming you have payload_dumper installed and in PATH
-    for file_name in files_to_extract:
-        subprocess.run(['payload-dumper-go.exe', '-p', file_name, '-o', extract_to, payload_path], check=True)
-    print(f"Extracted specific files from payload.bin to {extract_to}")
+def extract_files(artifact_name):
+    import zipfile
+    with zipfile.ZipFile(f'{artifact_name}.zip', 'r') as zip_ref:
+        zip_ref.extractall(artifact_name)
+    print(f'Extracted {artifact_name}')
 
 def send_files_via_telegram(bot, channel_id, file_paths):
     for file_path in file_paths:
-        with open(file_path, 'rb') as file:
-            bot.send_document(channel_id, file)
-            print(f"Sent {file_path} to Telegram channel {channel_id}")
+        if os.path.exists(file_path):
+            with open(file_path, 'rb') as file:
+                bot.send_document(chat_id=channel_id, document=file)
+                print(f'Sent {file_path} to Telegram channel {channel_id}')
+        else:
+            print(f'File not found: {file_path}')
 
-def cleanup(directories):
-    for directory in directories:
-        if os.path.exists(directory):
-            shutil.rmtree(directory)
-            print(f"Deleted {directory}")
+@bot.message_handler(commands=['download'])
+def handle_download(message):
+    try:
+        command, firmware_url = message.text.split(' ', 1)
+        trigger_github_workflow(GITHUB_REPO, GITHUB_TOKEN, firmware_url)
+        bot.reply_to(message, "Started the GitHub workflow. I will notify you once the files are ready.")
+
+        # This part requires polling or webhook to get the run_id and then download artifacts
+        # Assuming the run_id is somehow obtained after the workflow completion
+        run_id = 'latest_run_id'  # Replace this with the actual method to get the latest run_id
+        download_artifacts(GITHUB_REPO, run_id, GITHUB_TOKEN)
+        extract_files('extracted-files')
+
+        file_paths = [
+            'extracted-files/boot.img',
+            'extracted-files/vendor_boot.img',
+            'extracted-files/dtbo.img'
+        ]
+        send_files_via_telegram(bot, message.chat.id, file_paths)
+        bot.reply_to(message, "Files have been sent to the channel.")
+    except Exception as e:
+        bot.reply_to(message, f"An error occurred: {e}")
 
 def main():
-    # Initialize Telegram bot
-    bot = telebot.TeleBot(TELEGRAM_TOKEN)
-
-    # Download firmware file
-    firmware_zip_path = os.path.join(DOWNLOAD_DIR, 'firmware.zip')
-    #download_file(DOWNLOAD_URL, firmware_zip_path)
-
-    # Extract firmware file
-    #extract_zip(firmware_zip_path, EXTRACT_DIR)
-
-    # Extract specific files from payload.bin
-    payload_path = os.path.join(EXTRACT_DIR, 'payload.bin')
-    required_files = ['boot', 'init_boot', 'vendor_boot', 'dtbo']
-    extract_specific_files(payload_path, PAYLOAD_DIR, required_files)
-
-    # Collect required files
-    required_files = ['boot.img', 'vendor_boot.img', 'dtbo.img']
-    file_paths = [os.path.join(PAYLOAD_DIR, file) for file in required_files]
-
-    # Send files to Telegram channel
-    send_files_via_telegram(bot, CHANNEL_ID, file_paths)
-
-    # Clean up
-    cleanup([DOWNLOAD_DIR, EXTRACT_DIR, PAYLOAD_DIR])
+    bot.polling()
 
 if __name__ == '__main__':
     main()

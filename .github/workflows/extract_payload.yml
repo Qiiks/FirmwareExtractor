@@ -1,0 +1,39 @@
+name: Extract Payload
+
+on:
+  workflow_dispatch:
+    inputs:
+      firmware_url:
+        description: 'Firmware download URL'
+        required: true
+
+jobs:
+  extract-payload:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Download payload-dumper-go
+      run: |
+        wget https://github.com/ssut/payload-dumper-go/releases/download/1.2.2/payload-dumper-go_1.2.2_linux_amd64.tar.gz -O payload-dumper-go.tar.gz
+        tar -xzf payload-dumper-go.tar.gz
+        chmod +x payload-dumper-go
+
+    - name: Download firmware file
+      run: |
+        wget ${{ github.event.inputs.firmware_url }} -O firmware.zip
+        unzip firmware.zip -d firmware
+        mv firmware/payload.bin .
+
+    - name: Extract specific files from payload.bin
+      run: |
+        mkdir files
+        ./payload-dumper-go -p boot,vendor_boot,dtbo -o files payload.bin
+
+    - name: Upload extracted files as artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: extracted-files
+        path: files
