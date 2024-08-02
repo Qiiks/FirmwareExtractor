@@ -1,10 +1,34 @@
 import os
 import time
 import requests
+import logging
 import telebot
 from telebot import types
 from dotenv import load_dotenv
 from collections import defaultdict
+
+
+logging.basicConfig(
+    filename='bot.log',  # Log file name
+    filemode='a',  # Append mode
+    level=logging.INFO,  # Log level
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'  # Log message format
+)
+
+# Create a custom logger
+logger = logging.getLogger(__name__)
+
+# Create a console handler
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)  # Set logging level for the console handler to INFO and above
+
+# Create a formatter and add it to the console handler
+console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(console_formatter)
+
+# Add the console handler to the logger
+logger.addHandler(console_handler)
+
 
 # Load environment variables from .env file
 load_dotenv()
@@ -35,7 +59,7 @@ def trigger_github_workflow(repo, token, firmware_url):
     }
     response = requests.post(workflow_url, headers=headers, json=data)
     response.raise_for_status()
-    print(f'Triggered workflow for {firmware_url}')
+    logger.info(f'Triggered workflow for {firmware_url}')
 
 def get_latest_run_id(repo, token):
     url = f'https://api.github.com/repos/{repo}/actions/runs'
@@ -53,7 +77,7 @@ def get_latest_run_id(repo, token):
     runs.sort(key=lambda x: x['created_at'], reverse=True)
     latest_run = runs[0]
     run_id = latest_run['id']
-    print(f'Latest run ID: {run_id}')
+    logger.info(f'Latest run ID: {run_id}')
     return run_id
 
 def check_run_status(repo, run_id, token):
@@ -66,7 +90,7 @@ def check_run_status(repo, run_id, token):
     response.raise_for_status()
     
     run_status = response.json()['status']
-    print(f'Workflow run status: {run_status}')
+    logger.info(f'Workflow run status: {run_status}')
     return run_status
 
 def get_artifact_download_url(repo, run_id, token):
@@ -83,14 +107,14 @@ def get_artifact_download_url(repo, run_id, token):
         # Assuming the first artifact is the one you want
         artifact = artifacts[0]
         download_url = artifact['archive_download_url']
-        print(f'Artifact download URL: {download_url}')
+        logger.info(f'Artifact download URL: {download_url}')
         return download_url
     else:
         raise ValueError('No artifacts found')
 
 def send_download_link_via_telegram(bot, channel_id, download_url, message):
     bot.send_message(chat_id=channel_id, text=f"Your files are ready. Download them from: {download_url}", reply_parameters=types.ReplyParameters(message.message_id))
-    print(f'Sent download link to Telegram channel {channel_id}')
+    logger.info(f'Sent download link to Telegram channel {channel_id}')
 
 @bot.message_handler(commands=['download'])
 def handle_download(message):
@@ -138,4 +162,4 @@ while True:
     try:
         main()
     except Exception as e:
-        print("error occured: ", e)
+        logger.info("error occured: ", e)
