@@ -7,7 +7,6 @@ from telebot import types
 from dotenv import load_dotenv
 from collections import defaultdict
 
-
 logging.basicConfig(
     filename='bot.log',  # Log file name
     filemode='a',  # Append mode
@@ -29,7 +28,6 @@ console_handler.setFormatter(console_formatter)
 # Add the console handler to the logger
 logger.addHandler(console_handler)
 
-
 # Load environment variables from .env file
 load_dotenv()
 
@@ -45,6 +43,13 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN)
 user_cooldowns = defaultdict(lambda: 0)
 COOLDOWN_PERIOD = 10 * 60  # 10 minutes in seconds
 
+def handle_rate_limit(response):
+    if 'X-RateLimit-Remaining' in response.headers and int(response.headers['X-RateLimit-Remaining']) == 0:
+        reset_time = int(response.headers.get('X-RateLimit-Reset', time.time() + 60))
+        wait_time = reset_time - time.time()
+        return wait_time
+    return 0
+
 def trigger_github_workflow(repo, token, firmware_url):
     workflow_url = f'https://api.github.com/repos/{repo}/actions/workflows/extract_payload.yml/dispatches'
     headers = {
@@ -58,6 +63,11 @@ def trigger_github_workflow(repo, token, firmware_url):
         }
     }
     response = requests.post(workflow_url, headers=headers, json=data)
+    wait_time = handle_rate_limit(response)
+    if wait_time > 0:
+        logger.warning(f'Rate limit exceeded. Waiting for {wait_time} seconds.')
+        time.sleep(wait_time)
+        response = requests.post(workflow_url, headers=headers, json=data)
     response.raise_for_status()
     logger.info(f'Triggered workflow for {firmware_url}')
 
@@ -68,6 +78,11 @@ def get_latest_run_id(repo, token):
         'Accept': 'application/vnd.github.v3+json',
     }
     response = requests.get(url, headers=headers)
+    wait_time = handle_rate_limit(response)
+    if wait_time > 0:
+        logger.warning(f'Rate limit exceeded. Waiting for {wait_time} seconds.')
+        time.sleep(wait_time)
+        response = requests.get(url, headers=headers)
     response.raise_for_status()
     
     runs = response.json()['workflow_runs']
@@ -87,6 +102,11 @@ def check_run_status(repo, run_id, token):
         'Accept': 'application/vnd.github.v3+json',
     }
     response = requests.get(url, headers=headers)
+    wait_time = handle_rate_limit(response)
+    if wait_time > 0:
+        logger.warning(f'Rate limit exceeded. Waiting for {wait_time} seconds.')
+        time.sleep(wait_time)
+        response = requests.get(url, headers=headers)
     response.raise_for_status()
     
     run_status = response.json()['status']
@@ -100,6 +120,11 @@ def get_artifact_download_url(repo, run_id, token):
     }
     artifacts_url = f'https://api.github.com/repos/{repo}/actions/runs/{run_id}/artifacts'
     response = requests.get(artifacts_url, headers=headers)
+    wait_time = handle_rate_limit(response)
+    if wait_time > 0:
+        logger.warning(f'Rate limit exceeded. Waiting for {wait_time} seconds.')
+        time.sleep(wait_time)
+        response = requests.get(artifacts_url, headers=headers)
     response.raise_for_status()
 
     artifacts = response.json()['artifacts']
@@ -163,5 +188,5 @@ while True:
     try:
         main()
     except Exception as e:
-        logger.info("error occured: ", e)
+        logger.info("error occurred: %s", e)
         time.sleep(5)  # Wait 5 seconds before retrying
